@@ -4,6 +4,7 @@ declare const Zotero: any
 declare const Zotero_Preferences: any
 
 import { debug } from './debug.ts'
+import { getString } from './get-string.ts'
 import { ZoteroConfig } from './zotero-config.ts'
 import { patch as $patch$ } from './monkey-patch.ts'
 
@@ -57,8 +58,8 @@ class AutoExportPrefPane {
       col => (col as Element).getAttribute('id').replace(/^better-bibtex-preferences-auto-export-/, '')
     )
 
-    const on = Zotero.BetterBibTeX.getString('Preferences.auto-export.setting.on')
-    const off = Zotero.BetterBibTeX.getString('Preferences.auto-export.setting.off')
+    const on = getString('Preferences.auto-export.setting.on')
+    const off = getString('Preferences.auto-export.setting.off')
 
     for (const ae of AutoExport.db.chain().simplesort('path').data()) {
       const treeitem = exportlist.appendChild(document.createElement('treeitem'))
@@ -75,13 +76,13 @@ class AutoExportPrefPane {
 
         switch (column) {
           case 'collection':
-            const type = Zotero.BetterBibTeX.getString(`Preferences.auto-export.type.${ae.type}`) || ae.type
+            const type = getString(`Preferences.auto-export.type.${ae.type}`) || ae.type
             treecell.setAttribute('label', `${type}: ${this.autoExportName(ae)}`)
             break
 
           case 'status':
             let status = ae.error ? 'error' : ae.status
-            status = Zotero.BetterBibTeX.getString(`Preferences.auto-export.status.${status}`) || status
+            status = getString(`Preferences.auto-export.status.${status}`) || status
             if (ae.error) status += `: ${ae.error}`
             treecell.setAttribute('label', status)
             break

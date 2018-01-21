@@ -2,6 +2,7 @@ declare const Zotero: any
 
 import { Preferences as Prefs } from './prefs.ts'
 import { debug } from './debug.ts'
+import { getString } from './get-string.ts'
 
 // export singleton: https://k94n.com/es6-modules-single-instance-pattern
 export let Translators = new class { // tslint:disable-line:variable-name
@@ -59,8 +60,8 @@ export let Translators = new class { // tslint:disable-line:variable-name
       if (path) {
         const file = Zotero.File.pathToFile(path)
 
-        if (file.exists() && !file.isFile()) return reject(Zotero.BetterBibTeX.getString('Translate.error.target.notaFile', { path }))
-        if (!file.parent || !file.parent.exists()) return reject(Zotero.BetterBibTeX.getString('Translate.error.target.noParent', { path }))
+        if (file.exists() && !file.isFile()) return reject(getString('Translate.error.target.notaFile', { path }))
+        if (!file.parent || !file.parent.exists()) return reject(getString('Translate.error.target.noParent', { path }))
 
         translation.setLocation(file)
       }
