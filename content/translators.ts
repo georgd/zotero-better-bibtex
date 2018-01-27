@@ -41,6 +41,10 @@ export let Translators = new class { // tslint:disable-line:variable-name
         debug('Translator.inits: reinit failed @', (new Date()).valueOf() - start, err)
       }
     }
+
+    // pre-loads export translators for #893
+    const translation = new Zotero.Translate('export')
+    await translation.getTranslators()
   }
 
   public translate(translatorID: string, displayOptions: any, items: { library?: any, items?: any, collection?: any }, path = null): Promise<string> {
