@@ -1,7 +1,6 @@
 declare const Components: any
 declare const Zotero: any
 
-import { XULoki as Loki } from './db/loki.ts'
 import { KeyManager } from './key-manager.ts'
 import { Formatter } from './cayw/formatter.ts'
 import { debug } from './debug.ts'
@@ -87,15 +86,13 @@ class Field {
  * The Document class corresponds to a single word processing document.
  */
 class Document {
-  public fields: Field[]
+  public fields: Field[] = []
   public data: any
-  public $loki: number
+  public id: number
 
-  constructor() {
-    this.fields = []
-  }
+  constructor(docId, options) {
+    this.id = docId
 
-  public async initDoc(options: {style?: string} = {}) {
     options.style = options.style || 'apa'
     const style = Zotero.Styles.get(`http://www.zotero.org/styles/${options.style}`) || Zotero.Styles.get(`http://juris-m.github.io/styles/${options.style}`) || Zotero.Styles.get(options.style)
     debug('CAYW.document:', style)
@@ -110,7 +107,7 @@ class Document {
     data.sessionID = Zotero.Utilities.randomString(10) // tslint:disable-line:no-magic-numbers
     Object.assign(data, options)
     debug('CAYW.document:', data)
-    await this.setDocumentData(data.serialize())
+    this.data = data.serialize()
   }
 
   /**
@@ -240,50 +237,36 @@ export let Application = new class { // tslint:disable-line:variable-name
   public outputFormat = 'rtf'
   public supportedNotes = ['footnotes', 'endnotes']
 
-  public fields: any[]
+  public fields: any[] = []
 
-  private docs: any
-  private active: Document
-
-  constructor() {
-    this.fields = [] // what does this do?
-
-    const db = new Loki('cayw', {
-      ttl: 60 * 1000, // tslint:disable-line:no-magic-numbers
-      ttlInterval: 5 * 60 * 1000, // tslint:disable-line:no-magic-numbers
-    })
-    this.docs = db.addCollection('cayw', {
-      ttl: 60 * 1000, // tslint:disable-line:no-magic-numbers
-      ttlInterval: 5 * 60 * 1000, // tslint:disable-line:no-magic-numbers
-    })
-  }
+  private docs: { [key: number]: Document } = {}
+  private docId: number = 0
 
   /**
    * Gets the active document.
    * @returns {Document}
    */
-  public async getActiveDocument() { return this.active }
+  public async getActiveDocument() { return this.docs[this.docId] }
 
   /**
    * Gets the document by some app-specific identifier.
    * @param {String|Number} id
    */
   public async getDocument(id) {
-    debug('CAYW.getDocument', { id }, this.docs.findOne(id))
-    return this.docs.findOne(id)
+    debug('CAYW.getDocument', { id }, this.docs[id])
+    return this.docs[id]
   }
 
   public QueryInterface() { return this }
 
   public async createDocument(options) {
-    this.active = new Document()
-    await this.active.initDoc(options)
-    this.docs.insert(this.active)
-    return this.active
+    this.docId += 1
+    this.docs[this.docId] = new Document(this.docId, options)
+    return this.docs[this.docId]
   }
 
   public async closeDocument(doc) {
-    this.docs.findAndRemove(doc.$loki)
+    delete this.docs[doc.id]
   }
 }
 
@@ -291,7 +274,7 @@ export async function pick(options) {
   await Zotero.BetterBibTeX.ready
 
   const doc = await Application.createDocument(options)
-  await Zotero.Integration.execCommand('BetterBibTeX', 'addEditCitation', doc.$loki)
+  await Zotero.Integration.execCommand('BetterBibTeX', 'addEditCitation', doc.id)
 
   const picked = await doc.citation()
   const citation = picked.length ? await Formatter[options.format || 'playground'](picked, options) : ''
