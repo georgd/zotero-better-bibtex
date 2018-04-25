@@ -236,7 +236,6 @@ export let Application = new class { // tslint:disable-line:variable-name
   public secondaryFieldType = 'Bookmark'
   public outputFormat = 'rtf'
   public supportedNotes = ['footnotes', 'endnotes']
-
   public fields: any[] = []
 
   private docs: { [key: number]: Document } = {}
