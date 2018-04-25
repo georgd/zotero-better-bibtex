@@ -1,5 +1,4 @@
 declare const Components: any
-declare const XPCOMUtils: any
 declare const Zotero: any
 
 import { XULoki as Loki } from './db/loki.ts'
@@ -7,24 +6,7 @@ import { KeyManager } from './key-manager.ts'
 import { Formatter } from './cayw/formatter.ts'
 import { debug } from './debug.ts'
 
-Components.utils.import('resource://gre/modules/XPCOMUtils.jsm')
-
 // tslint:disable:max-classes-per-file
-
-class FieldEnumerator {
-  // tslint:disable-next-line:variable-name
-  public QueryInterface = XPCOMUtils.generateQI([Components.interfaces.nsISupports, Components.interfaces.nsISimpleEnumerator])
-  public doc: Document
-  public idx: number
-
-  constructor(doc) {
-    this.doc = doc
-    this.idx = 0
-  }
-
-  public hasMoreElements() { return this.idx < this.doc.fields.length }
-  public getNext() { return this.doc.fields[this.idx++] }
-}
 
 /**
  * The Field class corresponds to a field containing an individual citation
@@ -49,17 +31,17 @@ class Field {
   /**
    * Deletes this field and its contents.
    */
-  public delete() { this.doc.fields.filter(field => field !== this) }
+  public async delete() { this.doc.fields.filter(field => field !== this) }
 
   /**
    * Removes this field, but maintains the field's contents.
    */
-  public removeCode() { this.code = '' }
+  public async removeCode() { this.code = '' }
 
   /**
    * Selects this field.
    */
-  public select() { return 0 }
+  public async select() { return 0 }
 
   /**
    * Sets the text inside this field to a specified plain text string or pseudo-RTF formatted text
@@ -67,38 +49,38 @@ class Field {
    * @param {String} text
    * @param {Boolean} isRich
    */
-  public setText(text, isRich) { this.text = text }
+  public async setText(text, isRich) { this.text = text }
 
   /**
    * Gets the text inside this field, preferably with formatting, but potentially without
    * @returns {String}
    */
-  public getText() { return this.text }
+  public async getText() { return this.text }
 
   /**
    * Sets field's code
    * @param {String} code
    */
-  public setCode(code) { this.code = code }
+  public async setCode(code) { this.code = code }
 
   /**
    * Gets field's code.
    * @returns {String}
    */
-  public getCode() { return this.code }
+  public async getCode() { return this.code }
 
   /**
    * Returns true if this field and the passed field are actually references to the same field.
    * @param {Field} field
    * @returns {Boolean}
    */
-  public equals(field) { return this === field }
+  public async equals(field) { return this === field }
 
   /**
    * This field's note index, if it is in a footnote or endnote; otherwise zero.
    * @returns {Number}
    */
-  public getNoteIndex() { return 0 }
+  public async getNoteIndex() { return 0 }
 }
 
 /**
@@ -109,14 +91,15 @@ class Document {
   public data: any
   public $loki: number
 
-  constructor(options) {
+  constructor() {
     this.fields = []
+  }
 
+  public async initDoc(options: {style?: string} = {}) {
     options.style = options.style || 'apa'
     const style = Zotero.Styles.get(`http://www.zotero.org/styles/${options.style}`) || Zotero.Styles.get(`http://juris-m.github.io/styles/${options.style}`) || Zotero.Styles.get(options.style)
     debug('CAYW.document:', style)
     options.style = style ? style.url : 'http://www.zotero.org/styles/apa'
-
     const data = new Zotero.Integration.DocumentData()
     data.prefs = {
       noteType: 0,
@@ -125,8 +108,9 @@ class Document {
     }
     data.style = {styleID: options.style, locale: 'en-US', hasBibliography: true, bibliographyStyleHasBeenSet: true}
     data.sessionID = Zotero.Utilities.randomString(10) // tslint:disable-line:no-magic-numbers
+    Object.assign(data, options)
     debug('CAYW.document:', data)
-    this.setDocumentData(data.serialize())
+    await this.setDocumentData(data.serialize())
   }
 
   /**
@@ -140,38 +124,38 @@ class Document {
    *     - Ok: 1, Cancel: 0
    *     - Ok: 0
    */
-  public displayAlert(dialogText, icon, buttons) { return 0 }
+  public async displayAlert(dialogText, icon, buttons) { return 0 }
 
   /**
    * Brings this document to the foreground (if necessary to return after displaying a dialog)
    */
-  public activate() { return 0 }
+  public async activate() { return 0 }
 
   /**
    * Determines whether a field can be inserted at the current position.
    * @param {String} fieldType
    * @returns {Boolean}
    */
-  public canInsertField(fieldType) { return true }
+  public async canInsertField(fieldType) { return true }
 
   /**
    * Returns the field in which the cursor resides, or NULL if none.
    * @param {String} fieldType
    * @returns {Boolean}
    */
-  public cursorInField(fieldType) { return false }
+  public async cursorInField(fieldType) { return false }
 
   /**
    * Get document data property from the current document
    * @returns {String}
    */
-  public getDocumentData() { return this.data }
+  public async getDocumentData() { return this.data }
 
   /**
    * Set document data property
    * @param {String} data
    */
-  public setDocumentData(data) { this.data = data }
+  public async setDocumentData(data) { this.data = data }
 
   /**
    * Inserts a field at the given position and initializes the field object.
@@ -179,7 +163,7 @@ class Document {
    * @param {Integer} noteType
    * @returns {Field}
    */
-  public insertField(fieldType, noteType) {
+  public async insertField(fieldType, noteType) {
     if (typeof noteType !== 'number') {
       throw new Error('noteType must be an integer')
     }
@@ -189,13 +173,6 @@ class Document {
   }
 
   /**
-   * Gets all fields present in the document.
-   * @param {String} fieldType
-   * @returns {FieldEnumerator}
-   */
-  public getFields(fieldType) { return new FieldEnumerator(this) }
-
-  /**
    * Gets all fields present in the document. The observer will receive notifications for two
    * topics: "fields-progress", with the document as the subject and percent progress as data, and
    * "fields-available", with an nsISimpleEnumerator of fields as the subject and the length as
@@ -203,38 +180,41 @@ class Document {
    * @param {String} fieldType
    * @param {nsIObserver} observer
    */
-  public getFieldsAsync(fieldType, observer) {
-    observer.observe(this.getFields(fieldType), 'fields-available', null)
+  public async getFields(fieldType) {
+    return Array.from(this.fields)
   }
 
   /**
    * Sets the bibliography style, overwriting the current values for this document
    */
-  public setBibliographyStyle(firstLineIndent, bodyIndent, lineSpacing, entrySpacing, tabStops, tabStopsCount) { return 0 }
+  public async setBibliographyStyle(firstLineIndent, bodyIndent, lineSpacing, entrySpacing, tabStops, tabStopsCount) { return 0 }
 
   /**
    * Converts all fields in a document to a different fieldType or noteType
    * @params {FieldEnumerator} fields
    */
-  public convert(fields, toFieldType, toNoteType, count) { return 0 }
+  public async convert(fields, toFieldType, toNoteType, count) { return 0 }
 
   /**
    * Cleans up the document state and resumes processor for editing
    */
-  public cleanup() { return 0 }
+  public async cleanup() { return 0 }
 
   /**
    * Informs the document processor that the operation is complete
    */
-  public complete() { return 0 }
+  public async complete() { return 0 }
 
   /**
    * Gets the citation
    */
-  public citation() {
-    if (!this.fields[0] || !this.fields[0].code || !this.fields[0].code.startsWith('ITEM CSL_CITATION ')) return []
+  public async citation() {
+    debug('async citations', this.fields)
+    // const citation = await (new Zotero.Integration.CitationField(this.fields[0], this.fields[0].code)).unserialize()
+    const citation = { citationItems: [] }
+    if (!citation || !citation.citationItems) return []
 
-    return JSON.parse(this.fields[0].code.replace(/ITEM CSL_CITATION /, '')).citationItems.map(item => {
+    return citation.citationItems.map(item => {
       debug('CAYW.citation:', item)
       return {
         id: item.id,
@@ -257,6 +237,9 @@ class Document {
 export let Application = new class { // tslint:disable-line:variable-name
   public primaryFieldType = 'Field'
   public secondaryFieldType = 'Bookmark'
+  public outputFormat = 'rtf'
+  public supportedNotes = ['footnotes', 'endnotes']
+
   public fields: any[]
 
   private docs: any
@@ -279,26 +262,27 @@ export let Application = new class { // tslint:disable-line:variable-name
    * Gets the active document.
    * @returns {Document}
    */
-  public getActiveDocument() { return this.active }
+  public async getActiveDocument() { return this.active }
 
   /**
    * Gets the document by some app-specific identifier.
    * @param {String|Number} id
    */
-  public getDocument(id) {
+  public async getDocument(id) {
     debug('CAYW.getDocument', { id }, this.docs.findOne(id))
     return this.docs.findOne(id)
   }
 
   public QueryInterface() { return this }
 
-  public createDocument(options) {
-    this.active = new Document(options)
+  public async createDocument(options) {
+    this.active = new Document()
+    await this.active.initDoc(options)
     this.docs.insert(this.active)
     return this.active
   }
 
-  public closeDocument(doc) {
+  public async closeDocument(doc) {
     this.docs.findAndRemove(doc.$loki)
   }
 }
@@ -306,12 +290,13 @@ export let Application = new class { // tslint:disable-line:variable-name
 export async function pick(options) {
   await Zotero.BetterBibTeX.ready
 
-  const doc = Application.createDocument(options)
+  const doc = await Application.createDocument(options)
   await Zotero.Integration.execCommand('BetterBibTeX', 'addEditCitation', doc.$loki)
 
-  const picked = doc.citation()
-  const citation = picked.length ? await Formatter[options.format || 'playground'](doc.citation(), options) : ''
-  Application.closeDocument(doc)
+  const picked = await doc.citation()
+  const citation = picked.length ? await Formatter[options.format || 'playground'](picked, options) : ''
+  debug('async picks', citation)
+  await Application.closeDocument(doc)
   return citation
 }
 
