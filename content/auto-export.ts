@@ -286,13 +286,12 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
     return git
   }
 
-  private _gitPush(path) {
+  private _gitPush(bibfile) {
     if (!this.git) return {}
 
-    debug('gitPush:', path)
+    debug('gitPush:', bibfile)
 
-    const name = Zotero.File.pathToFile(path)
-    let repo = name.clone() // assumes that we're handed a bibfile!
+    let repo = Zotero.File.pathToFile(bibfile)
     let git = null
 
     while (repo.parent) {
@@ -302,7 +301,7 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
     }
 
     if (!git) {
-      debug('gitPush:', path, 'is not in a repo')
+      debug('gitPush:', bibfile, 'is not in a repo')
       return {}
     }
 
@@ -332,10 +331,10 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
 
     if (enabled !== 'true' && enabled !== true) return {}
 
-    if (!this.normalizePath(name.path).startsWith(this.normalizePath(repo.path))) throw new Error(`${name.path} not in ${repo.path}?!`)
-    if (name.path[repo.path.length] !== (this.onWindows ? '\\' : '/')) throw new Error(`${name.path} not in directory ${repo.path} (${name.path[repo.path.length]} vs ${this.onWindows ? '\\' : '/'})?!`)
+    if (!this.normalizePath(bibfile).startsWith(this.normalizePath(repo.path))) throw new Error(`${bibfile} not in ${repo.path}?!`)
+    if (bibfile[repo.path.length] !== (this.onWindows ? '\\' : '/')) throw new Error(`${bibfile} not in directory ${repo.path} (${bibfile[repo.path.length]} vs ${this.onWindows ? '\\' : '/'})?!`)
 
-    return { repo: repo.path, name: name.path.substring(repo.path.length + 1) }
+    return { repo: repo.path, name: bibfile.substring(repo.path.length + 1) }
   }
 
   private normalizePath(path) {
