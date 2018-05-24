@@ -276,14 +276,12 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
   }
 
   private gitDir(repo) {
-    if (!repo.exists()) return null
-    if (!repo.isDirectory()) return null
+    if (!repo.exists() || !repo.isDirectory()) return null
 
     const git = repo.clone()
     git.append('.git')
 
-    if (!git.exists()) return null
-    if (!git.isDirectory()) return null
+    if (!git.exists() || !git.isDirectory()) return null
 
     return git
   }
