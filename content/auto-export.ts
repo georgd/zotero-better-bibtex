@@ -6,15 +6,60 @@ Components.utils.import('resource://gre/modules/Subprocess.jsm')
 
 import { debug } from './debug.ts'
 
+import { SequentialTaskQueue, CancellablePromiseLike } from 'sequential-task-queue'
 import * as ini from 'ini'
+
 import { Events } from './events.ts'
 import { DB } from './db/main.ts'
 import { Translators } from './translators.ts'
 import { Preferences as Prefs } from './prefs.ts'
 
+const _setTimeout = setTimeout.bind(null)
+const scheduler = {
+  schedule: callback => _setTimeout(callback, 0),
+}
+function sleep(time) { return new Promise(resolve => _setTimeout(resolve, time)) }
+
+class ExportQueue extends SequentialTaskQueue {
+  public held: boolean = false
+
+  constructor() {
+    super({ scheduler })
+
+    // (this as any) overrides the private-protection of queue
+    const next = (this as any).next.bind(this)
+    (this as any).next = () => {
+      if (this.held) return
+      next()
+    }
+  }
+
+  public scheduleExport(handler: Function, ae: any): CancellablePromiseLike<any> {
+    this.cancelExport(ae)
+    return this.push(handler, { args: ae })
+  }
+
+  public cancelExport(ae: any) {
+    for (const task of (this as any).queue.filter(queued => !queued.cancellationToken.cancelled && queued.args[0].$loki === ae.$loki)) {
+      task.cancel()
+    }
+  }
+
+  public hold() {
+    this.held = true
+  }
+
+  public resume() {
+    this.held = false;
+    (this as any).next()
+  }
+}
+
 // export singleton: https://k94n.com/es6-modules-single-instance-pattern
 export let AutoExport = new class { // tslint:disable-line:variable-name
   public db: any
+  public queue: ExportQueue
+
   private git: string
   private onWindows: boolean
 
@@ -97,7 +142,7 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
   public remove(type, ids) {
     debug('AutoExport.remove:', type, ids, {db: this.db.data, state: Prefs.get('autoExport') })
     for (const ae of this.db.find({ type, id: { $in: ids } })) {
-      if (ae.scheduled) clearTimeout(ae.scheduled)
+      this.queue.cancelExport(ae)
       this.db.remove(ae)
     }
   }
@@ -106,22 +151,20 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
     ae = this.db.get(typeof ae === 'number' ? ae : ae.$loki) // get a fresh copy so it's safe from interference
 
     debug('Autoexport.schedule:', ae)
-    if (ae.scheduled) clearTimeout(ae.scheduled)
     ae.status = 'scheduled'
-    ae.scheduled = (Prefs.get('autoExport') === 'immediate') ? setTimeout(this.run.bind(this, ae), Prefs.get('autoExportDelay')) : 0
     this.db.update(ae)
+    this.queue.scheduleExport(this.run.bind(this), ae)
   }
 
-  public async runScheduled() {
-    await Promise.all(this.db.find({ status: 'scheduled', scheduled: 0 }).map(ae => this.run(ae)))
-  }
-
-  private async run(ae) {
+  private async run(ae, task) {
     await Zotero.BetterBibTeX.ready
+
+    await sleep(Prefs.get('autoExportDelay'))
+
+    if (task.cancelled) return
 
     ae = this.db.get(typeof ae === 'number' ? ae : ae.$loki) // get a fresh copy so it's safe from interference
     debug('AutoExport.run:', ae)
-    ae.scheduled = 0
     ae.status = 'running'
     this.db.update(ae)
 
@@ -257,10 +300,11 @@ const idleObserver = {
     switch (topic) {
       case 'back':
       case 'active':
+        AutoExport.queue.hold()
         break
 
       case 'idle':
-        AutoExport.runScheduled()
+        AutoExport.queue.resume()
         break
     }
   },
@@ -275,9 +319,11 @@ Events.on('preference-changed', pref => {
 
   switch (Prefs.get('autoExport')) {
     case 'immediate':
-      AutoExport.runScheduled()
+      AutoExport.queue.resume()
       break
+
     default: // / off / idle
+      AutoExport.queue.hold()
       break
   }
 })
