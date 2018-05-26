@@ -228,6 +228,14 @@
         the Zotero recommendations on title/sentence casing, set this preference
         to "true" to suppress [title casing for English
         references](Unnecessarily-complicated-BibTeX-output%3F#mapping-fields).
+    autoExportDelay:
+      default: '1000'
+      description: >-
+        After a reference has been changed, BBT will wait for one second  by
+        default to see if changes have "settled" before actually performing the
+        export, with new incoming changes resetting that one-second clock. If
+        one second is too long or too short for your tastes, you can change the
+        delay here.
     itemObserverDelay:
       default: '100'
       description: >-

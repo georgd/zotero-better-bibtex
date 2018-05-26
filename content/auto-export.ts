@@ -103,8 +103,6 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
   }
 
   public schedule(ae) {
-    await Zotero.BetterBibTeX.ready
-
     ae = this.db.get(typeof ae === 'number' ? ae : ae.$loki) // get a fresh copy so it's safe from interference
 
     debug('Autoexport.schedule:', ae)
@@ -119,6 +117,8 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
   }
 
   private async run(ae) {
+    await Zotero.BetterBibTeX.ready
+
     ae = this.db.get(typeof ae === 'number' ? ae : ae.$loki) // get a fresh copy so it's safe from interference
     debug('AutoExport.run:', ae)
     ae.scheduled = 0

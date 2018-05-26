@@ -31,6 +31,7 @@ qualityReport: false
 biblatexExtendedDateFormat: true
 biblatexExtendedNameFormat: false
 suppressTitleCase: false
+autoExportDelay: 1000
 itemObserverDelay: 100
 parseParticles: true
 citeprocNoteCitekey: false
