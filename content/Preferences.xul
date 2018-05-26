@@ -316,6 +316,14 @@
         -->
 
         <preference
+          name="extensions.zotero.translators.better-bibtex.autoExportDelay"
+          type="int"
+          default="1000"/>
+        <!--!
+          After a reference has been changed, BBT will wait for one second  by default to see if changes have "settled" before actually performing the export, with new incoming changes resetting that one-second clock. If one second is too long or too short for your tastes, you can change the delay here.
+        -->
+
+        <preference
           name="extensions.zotero.translators.better-bibtex.itemObserverDelay"
           type="int"
           default="100"/>

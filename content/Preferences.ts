@@ -305,7 +305,7 @@ export = new class PrefPane {
     const selected = this.aeSelected()
     if (!selected) return
 
-    AutoExport.run(selected.autoexport.$loki)
+    AutoExport.schedule(selected.autoexport.$loki)
     this.aeRefresh()
   }
 
@@ -315,7 +315,7 @@ export = new class PrefPane {
 
     selected.autoexport[selected.toggle] = !selected.autoexport[selected.toggle]
     AutoExport.db.update(selected.autoexport)
-    AutoExport.run(selected.autoexport.$loki)
+    AutoExport.schedule(selected.autoexport.$loki)
     this.aeRefresh()
   }
 

@@ -6,160 +6,11 @@ Components.utils.import('resource://gre/modules/Subprocess.jsm')
 
 import { debug } from './debug.ts'
 
-import Queue = require('better-queue')
-import MemoryStore = require('better-queue-memory')
 import * as ini from 'ini'
 import { Events } from './events.ts'
 import { DB } from './db/main.ts'
 import { Translators } from './translators.ts'
 import { Preferences as Prefs } from './prefs.ts'
-
-function queueHandler(kind, handler) {
-  return (task, cb) => {
-    debug('AutoExport.queue:', kind, task)
-
-    handler(task).then(() => {
-      debug('AutoExport.queue:', kind, task, 'completed')
-      cb(null)
-    }).catch(err => {
-      debug('AutoExport.queue:', kind, task, 'failed:', err)
-      cb(err)
-    })
-
-    return {
-      cancel() { task.cancelled = true },
-    }
-  }
-}
-
-const scheduled = new Queue(
-  queueHandler('scheduled',
-    async task => {
-      const db = DB.getCollection('autoexport')
-      const ae = db.get(task.id)
-      if (!ae) throw new Error(`AutoExport ${task.id} not found`)
-
-      debug('AutoExport.scheduled:', ae)
-      ae.status = 'running'
-      db.update(ae)
-
-      try {
-        let items
-        switch (ae.type) {
-          case 'collection':
-            items = { collection: ae.id }
-            break
-          case 'library':
-            items = { library: ae.id }
-            break
-          default:
-            items = null
-        }
-
-        debug('AutoExport.scheduled: starting export', ae)
-
-        const { repo, name } = AutoExport.gitPush(ae.path) // tslint:disable-line:no-use-before-declare
-        AutoExport.pull(repo) // tslint:disable-line:no-use-before-declare
-        await Translators.translate(ae.translatorID, { exportNotes: ae.exportNotes, useJournalAbbreviation: ae.useJournalAbbreviation}, items, ae.path)
-        AutoExport.push(repo, name) // tslint:disable-line:no-use-before-declare
-
-        debug('AutoExport.scheduled: export finished', ae)
-        ae.error = ''
-      } catch (err) {
-        debug('AutoExport.scheduled: failed', ae, err)
-        ae.error = `${err}`
-      }
-
-      ae.status = 'done'
-      db.update(ae)
-      debug('AutoExport.scheduled: completed', task, ae)
-    }
-  ),
-
-  {
-    store: new MemoryStore(),
-    // https://bugs.chromium.org/p/v8/issues/detail?id=4718
-    setImmediate: setTimeout.bind(null),
-  }
-)
-scheduled.resume()
-
-const debounce_delay = 1000
-const scheduler = new Queue(
-  queueHandler('scheduler',
-    async task => {
-      task = {...task}
-
-      const db = DB.getCollection('autoexport')
-      const ae = db.get(task.id)
-      if (!ae) throw new Error(`AutoExport ${task.id} not found`)
-
-      debug('AutoExport.scheduler:', task, '->', ae, !!ae)
-      ae.status = 'scheduled'
-      db.update(ae)
-      debug('AutoExport.scheduler: waiting...', task, ae)
-
-      await Zotero.Promise.delay(debounce_delay)
-
-      debug('AutoExport.scheduler: woken', task, ae)
-
-      if (task.cancelled) {
-        debug('AutoExport.scheduler: cancel', ae)
-      } else {
-        debug('AutoExport.scheduler: start', ae)
-        scheduled.push(task)
-      }
-    }
-  ),
-
-  {
-    store: new MemoryStore(),
-    cancelIfRunning: true,
-    // https://bugs.chromium.org/p/v8/issues/detail?id=4718
-    setImmediate: setTimeout.bind(null),
-  }
-)
-
-if (Prefs.get('autoExport') !== 'immediate') { scheduler.pause() }
-
-if (Zotero.Debug.enabled) {
-  for (const event of [ 'empty', 'drain', 'task_queued', 'task_accepted', 'task_started', 'task_finish', 'task_failed', 'task_progress', 'batch_finish', 'batch_failed', 'batch_progress' ]) {
-    (e => scheduler.on(e, (...args) => { debug(`AutoExport.scheduler.${e}`, args) }))(event);
-    (e => scheduled.on(e, (...args) => { debug(`AutoExport.scheduled.${e}`, args) }))(event)
-  }
-}
-
-const idleObserver = {
-  observe(subject, topic, data) {
-    debug(`AutoExport.idle: ${topic}`)
-    if (Prefs.get('autoExport') !== 'idle') { return }
-    switch (topic) {
-      case 'back': case 'active':
-        scheduler.pause()
-        break
-
-      case 'idle':
-        scheduler.resume()
-        break
-    }
-  },
-}
-const idleService = Components.classes['@mozilla.org/widget/idleservice;1'].getService(Components.interfaces.nsIIdleService)
-idleService.addIdleObserver(idleObserver, Prefs.get('autoExportIdleWait'))
-
-Events.on('preference-changed', pref => {
-  if (pref !== 'autoExport') { return }
-
-  debug('AutoExport: preference changed')
-
-  switch (Prefs.get('autoExport')) {
-    case 'immediate':
-      scheduler.resume()
-      break
-    default: // / off / idle
-      scheduler.pause()
-  }
-})
 
 // export singleton: https://k94n.com/es6-modules-single-instance-pattern
 export let AutoExport = new class { // tslint:disable-line:variable-name
@@ -168,19 +19,17 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
   private onWindows: boolean
 
   constructor() {
-    Events.on('libraries-changed', ids => this.schedule('library', ids))
+    Events.on('libraries-changed', ids => this.touch('library', ids))
     Events.on('libraries-removed', ids => this.remove('library', ids))
-    Events.on('collections-changed', ids => this.schedule('collection', ids))
+    Events.on('collections-changed', ids => this.touch('collection', ids))
     Events.on('collections-removed', ids => this.remove('collection', ids))
   }
 
   public async init() {
     this.db = DB.getCollection('autoexport')
     for (const ae of this.db.find({ status: { $ne: 'done' } })) {
-      scheduler.push({ id: ae.$loki })
+      this.schedule(ae)
     }
-
-    if (Prefs.get('autoExport') === 'immediate') { scheduler.resume() }
 
     this.onWindows = Zotero.platform.toLowerCase().startsWith('win')
     try {
@@ -211,7 +60,7 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
     this.db.removeWhere({ path: ae.path })
     this.db.insert(ae)
 
-    if (this.gitPush(ae.path).repo) this.schedule(ae.type, [ae.id]) // causes initial push to overleaf at the cost of a unnecesary extra export
+    if (this.gitPush(ae.path).repo) this.touch(ae.type, [ae.id]) // causes initial push to git at the cost of a unnecesary extra export
   }
 
   public changed(items) {
@@ -237,42 +86,75 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
     if (changed.libraries.size) Events.emit('libraries-changed', Array.from(changed.libraries))
   }
 
-  public schedule(type, ids) {
-    debug('AutoExport.schedule:', type, ids, {db: this.db.data, state: Prefs.get('autoExport'), scheduler: !scheduler._stopped, scheduled: !scheduled._stopped})
+  public touch(type, ids) {
+    debug('AutoExport.touch:', type, ids, {db: this.db.data, state: Prefs.get('autoExport') })
     for (const ae of this.db.find({ type, id: { $in: ids } })) {
-      debug('AutoExport.schedule: push', ae.$loki)
-      scheduler.push({ id: ae.$loki })
+      debug('AutoExport.touch: ', ae.$loki)
+      this.schedule(ae)
     }
   }
 
   public remove(type, ids) {
-    debug('AutoExport.remove:', type, ids, {db: this.db.data, state: Prefs.get('autoExport'), scheduler: !scheduler._stopped, scheduled: !scheduled._stopped})
+    debug('AutoExport.remove:', type, ids, {db: this.db.data, state: Prefs.get('autoExport') })
     for (const ae of this.db.find({ type, id: { $in: ids } })) {
-      scheduled.cancel(ae.$loki)
-      scheduler.cancel(ae.$loki)
+      if (ae.scheduled) clearTimeout(ae.scheduled)
       this.db.remove(ae)
     }
   }
 
-  public run(ae) {
-    if (typeof ae === 'number') { ae = this.db.get(ae) }
+  public schedule(ae) {
+    await Zotero.BetterBibTeX.ready
 
-    debug('Autoexport.run:', ae)
+    ae = this.db.get(typeof ae === 'number' ? ae : ae.$loki) // get a fresh copy so it's safe from interference
+
+    debug('Autoexport.schedule:', ae)
+    if (ae.scheduled) clearTimeout(ae.scheduled)
     ae.status = 'scheduled'
+    ae.scheduled = (Prefs.get('autoExport') === 'immediate') ? setTimeout(this.run.bind(this, ae), Prefs.get('autoExportDelay')) : 0
     this.db.update(ae)
-    scheduled.push({ id: ae.$loki })
   }
 
-  public gitPush(path) {
-    let found
+  public async runScheduled() {
+    await Promise.all(this.db.find({ status: 'scheduled', scheduled: 0 }).map(ae => this.run(ae)))
+  }
+
+  private async run(ae) {
+    ae = this.db.get(typeof ae === 'number' ? ae : ae.$loki) // get a fresh copy so it's safe from interference
+    debug('AutoExport.run:', ae)
+    ae.scheduled = 0
+    ae.status = 'running'
+    this.db.update(ae)
+
+    let items
     try {
-      found = this._gitPush(path)
-      debug('gitPush::', { found })
+      switch (ae.type) {
+        case 'collection':
+          items = { collection: ae.id }
+          break
+        case 'library':
+          items = { library: ae.id }
+          break
+        default:
+          items = null
+      }
+
+      debug('AutoExport.run: starting export', ae, items)
+
+      const { repo, name } = this.gitPush(ae.path) // tslint:disable-line:no-use-before-declare
+      this.pull(repo) // tslint:disable-line:no-use-before-declare
+      await Translators.translate(ae.translatorID, { exportNotes: ae.exportNotes, useJournalAbbreviation: ae.useJournalAbbreviation}, items, ae.path)
+      this.push(repo, name) // tslint:disable-line:no-use-before-declare
+
+      debug('AutoExport.run: export finished', ae)
+      ae.error = ''
     } catch (err) {
-      debug('gitPush::', err)
-      found = {}
+      debug('AutoExport.scheduled: failed', ae, err)
+      ae.error = `${err}`
     }
-    return found
+
+    ae.status = ae.error ? 'error' : 'done'
+    this.db.update(ae)
+    debug('AutoExport.run: completed', ae)
   }
 
   private gitDir(repo) {
@@ -286,6 +168,18 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
     if (!git.isDirectory()) return null
 
     return git
+  }
+
+  private gitPush(path) {
+    let found
+    try {
+      found = this._gitPush(path)
+      debug('gitPush::', { found })
+    } catch (err) {
+      debug('gitPush::', err)
+      found = {}
+    }
+    return found
   }
 
   private _gitPush(path) {
@@ -354,3 +248,36 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
     debug('AutoExport.exec:', { cmd, args, workdir }, ':', await proc.stdout.readString())
   }
 }
+
+const idleObserver = {
+  observe(subject, topic, data) {
+    debug(`AutoExport.idle: ${topic}`)
+    if (Prefs.get('autoExport') !== 'idle') { return }
+
+    switch (topic) {
+      case 'back':
+      case 'active':
+        break
+
+      case 'idle':
+        AutoExport.runScheduled()
+        break
+    }
+  },
+}
+const idleService = Components.classes['@mozilla.org/widget/idleservice;1'].getService(Components.interfaces.nsIIdleService)
+idleService.addIdleObserver(idleObserver, Prefs.get('autoExportIdleWait'))
+
+Events.on('preference-changed', pref => {
+  if (pref !== 'autoExport') { return }
+
+  debug('AutoExport: preference changed')
+
+  switch (Prefs.get('autoExport')) {
+    case 'immediate':
+      AutoExport.runScheduled()
+      break
+    default: // / off / idle
+      break
+  }
+})

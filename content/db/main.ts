@@ -175,6 +175,8 @@ DB.init = async () => {
         useJournalAbbreviation: { type: 'boolean', default: false },
         error: { type: 'string', default: '' },
 
+        scheduled: { type: 'integer' },
+
         // LokiJS
         meta: { type: 'object' },
         $loki: { type: 'integer' },
