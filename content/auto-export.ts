@@ -161,7 +161,10 @@ export let AutoExport = new class { // tslint:disable-line:variable-name
 
     await sleep(Prefs.get('autoExportDelay'))
 
-    if (task.cancelled) return
+    if (task.cancelled) {
+      debug('AutoExport.run: cancelled', ae)
+      return
+    }
 
     ae = this.db.get(typeof ae === 'number' ? ae : ae.$loki) // get a fresh copy so it's safe from interference
     debug('AutoExport.run:', ae)
