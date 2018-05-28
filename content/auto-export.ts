@@ -29,18 +29,21 @@ class ExportQueue extends SequentialTaskQueue {
     // (this as any) overrides the private-protection of queue
     const next = (this as any).next.bind(this)
     (this as any).next = () => {
+      debug('autoexport: next', this.held)
       if (this.held) return
       next()
     }
   }
 
   public scheduleExport(handler: Function, ae: any): CancellablePromiseLike<any> {
+    debug('autoexport: scheduling', ae)
     this.cancelExport(ae)
     return this.push(handler, { args: ae })
   }
 
   public cancelExport(ae: any) {
     for (const task of (this as any).queue.filter(queued => !queued.cancellationToken.cancelled && queued.args[0].$loki === ae.$loki)) {
+      debug('autoexport: cancelling', ae)
       task.cancel()
     }
   }
