@@ -5,13 +5,26 @@ import JSON5 = require('json5')
 const cslVariables = require('./csl-vars.json')
 import * as Citekey from './key-manager/get-set.ts'
 
-function cslCreator(value) {
-  const creator = value.split(/\s*\|\|\s*/)
-  if (creator.length === 2) { // tslint:disable-line:no-magic-numbers
-    return {lastName: creator[0] || '', firstName: creator[1] || ''}
-  } else {
-    return { name: value }
+function cslCreator(value, type) {
+  const name = value.split('||').map(v => v.trim())
+  const withType = (type === 'creator' ? 1 : 0)
+
+  if (name.length === (2 + withType)) { // tslint:disable-line:binary-expression-operand-order
+    return {
+      lastName: name.shift(),
+      firstName: name.shift(),
+      type: name.shift(),
+    }
   }
+
+  if (name.length === (1 + withType)) { // tslint:disable-line:binary-expression-operand-order
+    return {
+      name: name.shift(),
+      type: name.shift(),
+    }
+  }
+
+  throw new Error(`unparsable '${type}': '${value}'`)
 }
 
 export function extract(item) {
@@ -83,7 +96,7 @@ export function extract(item) {
 
     if (cslType === 'creator') {
       extraFields.csl[name] = extraFields.csl[name] || { type: cslType, value: [] }
-      extraFields.csl[name].value.push(cslCreator(value))
+      extraFields.csl[name].value.push(cslCreator(value, cslType))
     } else {
       extraFields.csl[name] = { type: cslType, name, value }
     }
@@ -99,15 +112,19 @@ export function extract(item) {
     name = name.trim().toLowerCase().replace(/ +/g, '-')
     const cslType = cslVariables[name]
     debug('fieldExtract:', { name, value, cslType })
-    if (cslType) {
-      if (cslType === 'creator') {
-        extraFields.csl[name] = extraFields.csl[name] || { type: cslType, value: [] }
-        extraFields.csl[name].value.push(cslCreator(value))
-      } else {
-        extraFields.csl[name] = { type: cslType, name, value }
-      }
+    try {
+      if (name === 'creator' || cslType) {
+        if (cslType === 'creator') {
+          extraFields.csl[name] = extraFields.csl[name] || { type: cslType, value: [] }
+          extraFields.csl[name].value.push(cslCreator(value, cslType || 'creator'))
+        } else {
+          extraFields.csl[name] = { type: cslType, name, value }
+        }
 
-      return false
+        return false
+      }
+    } catch (err) {
+      debug('failed to parse creator type from', line, err)
     }
 
     if (['lccn', 'mr', 'zbl', 'arxiv', 'jstor', 'hdl', 'googlebooksid'].includes(name.replace(/-/g, ''))) { // google-books-id
