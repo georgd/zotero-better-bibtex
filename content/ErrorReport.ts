@@ -69,6 +69,7 @@ export = new class ErrorReport {
       document.getElementById('better-bibtex-report-id').setAttribute('value', this.key)
       document.getElementById('better-bibtex-report-result').hidden = false
     } catch (err) {
+      debug('ErrorReport: upload failed', err)
       const ps = Components.classes['@mozilla.org/embedcomp/prompt-service;1'].getService(Components.interfaces.nsIPromptService)
       ps.alert(null, Zotero.getString('general.error'), err)
       if (wizard.rewind) wizard.rewind()
@@ -178,34 +179,40 @@ export = new class ErrorReport {
     return info
   }
 
-  private submit(filename, data) {
-    const request_ok_range = 1000
-
+  private async submit(filename, data) {
     return new Zotero.Promise((resolve, reject) => {
+      debug('ErrorReport: submitting', filename)
       const fd = new FormData()
       for (const [name, value] of Object.entries(this.form.fields)) {
         fd.append(name, value)
       }
-
-      const file = new Blob([data], { type: 'text/plain'})
-      fd.append('file', file, `${this.timestamp}-${this.key}-${filename}`)
+      fd.append('file', (new Blob([data], { type: 'text/plain'})), `${this.timestamp}-${this.key}-${filename}`)
 
       const request = Components.classes['@mozilla.org/xmlextras/xmlhttprequest;1'].createInstance()
       request.open('POST', this.form.action, true)
 
-      request.onload = () => {
-        if (!request.status || request.status > request_ok_range) {
-          return reject(`${Zotero.getString('errorReport.noNetworkConnection')}: ${request.status}`)
+      request.onloadend = () => {
+        let status = request.status
+
+        // If an invalid HTTP response (e.g., NS_ERROR_INVALID_CONTENT_ENCODING) includes a
+        // 4xx or 5xx HTTP response code, swap it in.
+        try {
+          if (!status && request.channel.responseStatus >= 400) { // tslint:disable-line:no-magic-numbers
+            debug('ErrorReport: Overriding status for invalid response for', this.form.action, request.channel.status)
+            status = request.channel.responseStatus
+          }
+        } catch (e) {
+          debug('ErrorReport: could not get channel status')
         }
 
-        if (request.status !== parseInt(this.form.fields.success_action_status)) {
+        if (status !== parseInt(this.form.fields.success_action_status)) {
+          debug('ErrorReport: submit of', filename, 'failed', { status, response: request.responseText })
           return reject(`${Zotero.getString('errorReport.invalidResponseRepository')}: ${request.status}, expected ${this.form.fields.success_action_status}\n${request.responseText}`)
         }
 
+        debug('ErrorReport: submit of', filename, 'succeeded')
         return resolve()
       }
-
-      request.onerror = () => reject(`${Zotero.getString('errorReport.noNetworkConnection')}: ${request.statusText}`)
 
       request.send(fd)
     })
