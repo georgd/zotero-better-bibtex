@@ -207,7 +207,7 @@ export = new class ErrorReport {
 
         if (status !== parseInt(this.form.fields.success_action_status)) {
           debug('ErrorReport: submit of', filename, 'failed', { status, response: request.responseText })
-          return reject(`${Zotero.getString('errorReport.invalidResponseRepository')}: ${request.status}, expected ${this.form.fields.success_action_status}\n${request.responseText}`)
+          return reject(`${filename}: ${Zotero.getString('errorReport.invalidResponseRepository')}: ${request.status}, expected ${this.form.fields.success_action_status} (response: ${request.responseText})`)
         }
 
         debug('ErrorReport: submit of', filename, 'succeeded')
