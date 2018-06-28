@@ -52,6 +52,7 @@ export = new class ErrorReport {
   }
 
   public async send() {
+    debug('ErrorReport.send...')
     const wizard = document.getElementById('better-bibtex-error-report')
     const continueButton = wizard.getButton('next')
     continueButton.disabled = true
@@ -59,9 +60,11 @@ export = new class ErrorReport {
     const errorlog = [this.errorlog.info, this.errorlog.errors, this.errorlog.full].join('\n\n')
 
     try {
-      await this.submit('errorlog.txt', errorlog)
-      await this.submit('db.json', this.errorlog.db)
-      if (this.errorlog.references) await this.submit('references.json', this.errorlog.references)
+      debug('ErrorReport.send: starting uploads')
+      const uploads = [this.submit('errorlog.txt', errorlog), this.submit('db.json', this.errorlog.db)]
+      if (this.errorlog.references) uploads.push(this.submit('references.json', this.errorlog.references))
+      await Promise.all(uploads)
+      debug('ErrorReport.send: uploads ready')
       wizard.advance()
       wizard.getButton('cancel').disabled = true
       wizard.canRewind = false
@@ -180,6 +183,8 @@ export = new class ErrorReport {
   }
 
   private async submit(filename, data) {
+    debug('ErrorReport: prepare submit', filename)
+
     return new Zotero.Promise((resolve, reject) => {
       debug('ErrorReport: submitting', filename)
       const fd = new FormData()
