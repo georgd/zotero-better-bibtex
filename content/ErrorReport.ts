@@ -135,9 +135,9 @@ export = new class ErrorReport {
     if (Zotero.BetterBibTeX.ready && this.params.items) {
       await Zotero.BetterBibTeX.ready
 
-      debug('ErrorReport::init items', this.params.items)
+      debug('ErrorReport.init items', this.params.items)
       this.errorlog.references = await Translators.translate(Translators.byLabel.BetterBibTeXJSON.translatorID, {exportNotes: true}, this.params.items)
-      debug('ErrorReport::init references', this.errorlog.references)
+      debug('ErrorReport.init references', this.errorlog.references)
     }
 
     debug('ErrorReport.init:', Object.keys(this.errorlog))
@@ -194,23 +194,14 @@ export = new class ErrorReport {
       fd.append('file', (new Blob([data], { type: 'text/plain'})), `${this.timestamp}-${this.key}-${filename}`)
 
       const request = Components.classes['@mozilla.org/xmlextras/xmlhttprequest;1'].createInstance()
+      request.mozBackgroundRequest = true
       request.open('POST', this.form.action, true)
 
-      request.onloadend = () => {
-        let status = request.status
+      request.onreadystatechange = () => {
+        debug('ErrorReport::onreadystatechange', filename, request.readyState, request.status)
+        if (request.readyState !== 4) return // tslint:disable-line:no-magic-numbers
 
-        // If an invalid HTTP response (e.g., NS_ERROR_INVALID_CONTENT_ENCODING) includes a
-        // 4xx or 5xx HTTP response code, swap it in.
-        try {
-          if (!status && request.channel.responseStatus >= 400) { // tslint:disable-line:no-magic-numbers
-            debug('ErrorReport: Overriding status for invalid response for', this.form.action, request.channel.status)
-            status = request.channel.responseStatus
-          }
-        } catch (e) {
-          debug('ErrorReport: could not get channel status')
-        }
-
-        if (status !== parseInt(this.form.fields.success_action_status)) {
+        if (request.status !== parseInt(this.form.fields.success_action_status)) {
           debug('ErrorReport: submit of', filename, 'failed', { status, response: request.responseText })
           return reject(`${filename}: ${Zotero.getString('errorReport.invalidResponseRepository')}: ${request.status}, expected ${this.form.fields.success_action_status} (response: ${request.responseText})`)
         }
@@ -218,6 +209,14 @@ export = new class ErrorReport {
         debug('ErrorReport: submit of', filename, 'succeeded')
         return resolve()
       }
+
+      request.onloadstart = () => { debug('ErrorReport::onloadstart', filename) }
+      request.onprogress =  () => { debug('ErrorReport::onprogress', filename) }
+      request.onabort =     () => { debug('ErrorReport::onabort', filename) }
+      request.onerror =     () => { debug('ErrorReport::onerror', filename) }
+      request.onload =      () => { debug('ErrorReport::onload', filename) }
+      request.ontimeout =   () => { debug('ErrorReport::ontimeout', filename) }
+      request.onloadend =   () => { debug('ErrorReport::onloadend', filename) }
 
       request.send(fd)
     })
