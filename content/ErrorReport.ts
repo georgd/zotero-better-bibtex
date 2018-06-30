@@ -195,13 +195,14 @@ export = new class ErrorReport {
 
       const request = Components.classes['@mozilla.org/xmlextras/xmlhttprequest;1'].createInstance()
       request.mozBackgroundRequest = true
-      request.open('POST', this.form.action, true)
+      // request.open('POST', this.form.action, true)
+      request.open('POST', 'http://dev.retorque.re/index.php', true)
 
       request.onreadystatechange = () => {
         debug('ErrorReport::onreadystatechange', filename, request.readyState, request.status)
         if (request.readyState !== 4) return // tslint:disable-line:no-magic-numbers
 
-        if (request.status !== parseInt(this.form.fields.success_action_status)) {
+        if (request.status !== 200 && request.status !== parseInt(this.form.fields.success_action_status)) { // tslint:disable-line:no-magic-numbers
           debug('ErrorReport: submit of', filename, 'failed', { status, response: request.responseText })
           return reject(`${filename}: ${Zotero.getString('errorReport.invalidResponseRepository')}: ${request.status}, expected ${this.form.fields.success_action_status} (response: ${request.responseText})`)
         }
