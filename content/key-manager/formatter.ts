@@ -68,7 +68,7 @@ class PatternFormatter {
     if (!this.itemTypes) throw new Error('PatternFormatter.update called before init')
 
     debug('PatternFormatter.update:', reason)
-    this.skipWords = new Set(Prefs.get('skipWords').split(',').map(word => word.trim()).filter(word => word))
+    this.skipWords = new Set(Prefs.get('skipWords').toLowerCase().split(',').map(word => word.trim()).filter(word => word))
     this.fold = Prefs.get('citekeyFold')
 
     for (const attempt of ['get', 'reset']) {
